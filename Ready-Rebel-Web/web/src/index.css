@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-gradient-to-b from-orange-50 to-orange-100 min-h-screen; }

@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String    @default("New Chat")
+  thread    Json      @default("[]")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  Message   Message[]
+}
+
+enum Role {
+  USER
+  ASSISTANT
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String       @default("USER")
+  content        String
+  createdAt      DateTime     @default(now())
+}
+
+model Settings {
+  id                   String   @id @default(cuid())
+  theme                String   @default("light")
+  notificationsEnabled Boolean  @default(false)
+  avatar               String   @default("male")
+  ttsEnabled           Boolean  @default(false)
+  voice                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
