@@ -1,14 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
-import axios from 'axios'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-type Message = { id: string; text: string; sentBy: 'me' | 'rebel' }
+type Msg = {
+  id: string
+  role: 'user' | 'bot'
+  text: string
+  createdAt: number
+}
 
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const endRef = useRef<HTMLDivElement | null>(null)
-  const avatar = localStorage.getItem('avatar') || 'boy'
+  const [loading, setLoading] = useState(false)
+  const [messages, setMessages] = useState<Msg[]>([
+    { id: 'welcome', role: 'bot', text: 'Hey! Ask me anything 👋', createdAt: Date.now() },
+  ])
 
+  const endRef = useRef<HTMLDivElement | null>(null)
+
+  const avatar = useMemo(() => localStorage.getItem('avatar') || 'boy', [])
   const avatarMap: Record<string, string> = {
     boy: '🧑',
     girl: '👩',
@@ -18,21 +26,48 @@ export default function Chat() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, loading])
 
   async function send() {
     const text = input.trim()
-    if (!text) return
-    const myMsg: Message = { id: crypto.randomUUID(), text, sentBy: 'me' }
-    const typing: Message = { id: 'typing', text: 'Typing...', sentBy: 'rebel' }
-    setMessages(m => [...m, myMsg, typing])
+    if (!text || loading) return
+
     setInput('')
+    setLoading(true)
+
+    const userMsg: Msg = { id: crypto.randomUUID(), role: 'user', text, createdAt: Date.now() }
+    setMessages(prev => [...prev, userMsg])
 
     try {
-      const { data } = await axios.post('/api/chat', { message: text })
-      setMessages(m => m.filter(x => x.id !== 'typing').concat({ id: crypto.randomUUID(), text: (data?.reply ?? '').trim(), sentBy: 'rebel' }))
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      })
+
+      if (!res.ok) {
+        const t = await res.text()
+        throw new Error(t || `Request failed (${res.status})`)
+      }
+
+      const data = (await res.json()) as { reply?: string }
+      const botMsg: Msg = {
+        id: crypto.randomUUID(),
+        role: 'bot',
+        text: data.reply ?? 'No reply received.',
+        createdAt: Date.now(),
+      }
+      setMessages(prev => [...prev, botMsg])
     } catch (e: any) {
-      setMessages(m => m.filter(x => x.id !== 'typing').concat({ id: crypto.randomUUID(), text: 'Failed: ' + (e?.message || e), sentBy: 'rebel' }))
+      const botMsg: Msg = {
+        id: crypto.randomUUID(),
+        role: 'bot',
+        text: `⚠️ ${e?.message ?? 'Failed to reach API'}`,
+        createdAt: Date.now(),
+      }
+      setMessages(prev => [...prev, botMsg])
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -41,39 +76,47 @@ export default function Chat() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto h-[80vh] flex flex-col gap-4">
-      <div className="flex-1 overflow-y-auto bg-white/70 rounded-2xl p-4 space-y-3">
-        {messages.map(m => (
-          <div key={m.id} className={`max-w-[80%] px-3 py-2 rounded-2xl ${m.sentBy === 'me' ? 'bg-amber-500 text-white ml-auto' : 'bg-orange-600 text-white'}`}>
-            <div className="text-xs opacity-80 mb-1">{m.sentBy === 'me' ? 'You' : 'Rebel'}</div>
-            <div className="whitespace-pre-wrap">{m.text}</div>
-          </div>
-        ))}
-        <div ref={endRef} />
-      </div>
-      <div className="flex gap-2 w-full max-w-3xl mx-auto">
-        <div className="flex items-center gap-3 flex-1">
-          <div className="text-2xl">
-            {avatarMap[avatar]}
-          </div>
-
-          <input
-            className="flex-1 w-full rounded-xl px-4 py-3"
-            placeholder="Type a message..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-          />
+    <div className="p-6">
+      <div className="w-full max-w-3xl mx-auto space-y-4">
+        <div className="rounded-2xl bg-white/70 p-4 min-h-[360px] space-y-3">
+          {messages.map(m => (
+            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`px-4 py-3 rounded-2xl max-w-[80%] ${m.role === 'user' ? 'bg-black text-white' : 'bg-white text-black'}`}>
+                {m.text}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="px-4 py-3 rounded-2xl max-w-[80%] bg-white text-black opacity-70">
+                Thinking...
+              </div>
+            </div>
+          )}
+          <div ref={endRef} />
         </div>
 
-        <button
-          onClick={send}
-          className="px-4 py-3 rounded-2xl bg-orange-600 text-white"
-        >
-          Send
-        </button>
+        <div className="flex gap-2 w-full max-w-3xl mx-auto">
+          <div className="flex items-center gap-3 flex-1">
+            <div className="text-2xl">{avatarMap[avatar] ?? '🙂'}</div>
+            <input
+              className="flex-1 w-full rounded-xl px-4 py-3"
+              placeholder={loading ? 'Thinking...' : 'Type a message...'}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              disabled={loading}
+            />
+          </div>
+          <button
+            onClick={send}
+            className="px-4 py-3 rounded-2xl bg-orange-600 text-white disabled:opacity-60"
+            disabled={loading || !input.trim()}
+          >
+            {loading ? '...' : 'Send'}
+          </button>
+        </div>
       </div>
-
     </div>
   )
 }
